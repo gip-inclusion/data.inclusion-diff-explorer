@@ -8,8 +8,6 @@
   flex: 1;
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  align-items: center;
 }
 
 .footer {
@@ -126,4 +124,13 @@
   .logo img {
     filter: invert(1);
   }
+}
+
+
+.tool {
+  display: flex;
+}
+
+.nav {
+  min-width: 300px;
 }
