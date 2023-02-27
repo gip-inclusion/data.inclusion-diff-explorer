@@ -12,6 +12,7 @@
     "jsondiffpatch": "^0.4.1",
     "localforage": "^1.10.0",
     "next": "12.3.1",
+    "pg": "^8.8.0",
     "react": "18.2.0",
     "react-dom": "18.2.0"
   },

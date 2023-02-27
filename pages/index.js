@@ -6,117 +6,14 @@ import Head from 'next/head'
 import styles from '../styles/Home.module.css'
 
 //import list from '../subset.json'
-import list from '../subsetXdora14.json'
+//import list from '../subsetXdora14.json'
+//import list from '../data-2022-12-05.json'
+import list from '../mini.json'
+//import list from '../data-mes_aides.json'
 
 import 'jsondiffpatch/dist/formatters-styles/html.css'
 
 
-const migrations = {
-  fee: function(av) {
-    if (av?.hasFee !== undefined) {
-      if (av.hasFee) {
-        return {...av, hasFee: undefined, feeCondition: 3}
-      } else {
-        return {...av, hasFee: undefined, feeCondition: 1}
-      }
-    } else {
-      return av
-    }
-  },
-  subcategories: function(av, ap) {
-
-  }
-}
-
-const diffExplanations = {
-  mes_aides_aides: {
-    dates: function(before, after, diff) {
-      const keys = new Set(Object.keys(diff?.fields ||  {}))
-      keys.delete("Modifié le")
-      keys.delete("Modifiée par")
-      keys.delete("Créée le")
-      if (keys.size == 0) {
-        return {
-          applied: true,
-          after: after,
-        }
-      }
-      return {
-        applied: false,
-        after: before
-      }
-    }
-  },
-  dora: {
-    fee: function(before, after, diff) {
-      const keys = Object.keys(diff)
-      if (keys.length == 2 && keys[0] == "hasFee" && keys[1] == "feeCondition") {
-        return {
-          applied: true,
-          after: after,
-        }
-      }
-      return {
-        applied: false,
-        after: before
-      }
-    }
-  },
-  etab_pub: {
-    date_modification: function(before, after, diff) {
-      const keys = Object.keys(diff)
-      if (keys.length == 1 && keys[0] == "date_modification") {
-        return {
-          applied: true,
-          after: after,
-        }
-      }
-      return {
-        applied: false,
-        after: before
-      }
-    }
-  },
-  itou_siae: {
-    date_maj: function(before, after, diff) {
-      const keys = Object.keys(diff)
-      if (keys.length == 1 && keys[0] == "date_maj") {
-        return {
-          applied: true,
-          after: after,
-        }
-      }
-      return {
-        applied: false,
-        after: before
-      }
-    }
-  }
-}
-
-function processExplanations(row, av, ap) {
-  const explanations = diffExplanations[row.data["Src Alias"]] || {}
-  const ids = Object.keys(explanations)
-  return ids.reduce((accum, explanationId) => {
-    const diff = jsondiffpatch.diff(accum.unexplained, accum.after)
-    const result = explanations[explanationId](accum.unexplained, accum.after, diff)
-
-    if (result.applied) {
-      accum.applied.push(explanationId)
-    } else {
-      accum.tested.push(explanationId)
-    }
-    accum.unexplained = result.after
-    return accum
-  }, { unexplained: av, applied: [], tested: [], after: ap })
-}
-
-function getExplanations(row) {
-  const explanationResult = processExplanations(row, row.before, row.after)
-  explanationResult.diff = jsondiffpatch.diff(explanationResult.unexplained, row.after, explanationResult.unexplained)
-  explanationResult.fullyExplained = Object.keys(explanationResult.diff || {}).length == 0
-  return explanationResult
-}
 
 function showChanges(row) {
   return (
@@ -134,12 +31,13 @@ function showChanges(row) {
   )
 }
 
-function processTable(table) {
-  return table.map(row => {
+function processTable(table, progressIndicator) {
+  return table.map((row, i) => {
+    progressIndicator((i+1)/table.length)
     const base = {
       data: row,
-      before: JSON.parse(row.Avant),
-      after: JSON.parse(row.Après),
+      before: row.data_prev,
+      after: row.data_next,
     }
     base.explanations = getExplanations(base)
     return base
@@ -147,6 +45,7 @@ function processTable(table) {
 }
 
 export default function Home() {
+  const [progress, setProgress] = useState(0)
   const [sources, setSources] = useState([])
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [selectedItem, setSelectedItem] = useState()
@@ -156,25 +55,33 @@ export default function Home() {
   const [displayedTable, setDisplayedTable] = useState([])
 
   useEffect(() => {
-    setTable(processTable(rawData.filter(e => e.Type.startsWith('M'))))
+    const filtered = rawData.filter(e => e.type.startsWith('M') && e.src_alias !== "mes_aides_aides")//.slice(0, 100)
+    setTable(processTable(filtered, (p) => {
+      console.log(p)
+      setProgress(p)
+    }))
   }, [rawData])
 
   useEffect(() => {
-    setDisplayedTable(table.filter(e => e.data["Src Alias"] == "mes_aides_aides" && !e.explanations.fullyExplained))
+    setDisplayedTable(table.filter(e => !e.explanations.fullyExplained))
   }, [table])
+
+  useEffect(() => {
+    console.log(selectedItem)
+  }, [selectedItem])
 
   useEffect(() => {
     setExplanationStats({
       total: table.length,
       explained: table.filter(r => r.explanations.fullyExplained).length,
       details: Object.values(table.reduce((accum, r) => {
-        accum[r.data['Src Alias']] = accum[r.data['Src Alias']] || {
-          id: r.data['Src Alias'],
+        accum[r.data.src_alias] = accum[r.data.src_alias] || {
+          id: r.data.src_alias,
           total: 0,
           explained: 0
         }
-        accum[r.data['Src Alias']].total += 1
-        accum[r.data['Src Alias']].explained += r.explanations.fullyExplained ? 1 : 0
+        accum[r.data.src_alias].total += 1
+        accum[r.data.src_alias].explained += r.explanations.fullyExplained ? 1 : 0
 
         return accum
       }, {})) || []
@@ -204,8 +111,11 @@ export default function Home() {
 
   useEffect(() => {
     localforage.getItem('sources').then(function(value) {
-      setSources(value || [])
-      setRawData(value[value.length-1].data)
+      const nextSources = value || []
+      setSources(nextSources)
+      if (nextSources.length) {
+        setRawData(value[value.length-1].data)
+      }
   }).catch(function(err) {
       // This code runs if there were any errors
       console.error(err);
@@ -228,6 +138,7 @@ export default function Home() {
       </Head>
 
       <main className={styles.main}>
+      <p>{progress}</p>
         <h1 className={styles.title}>
           data.inclusion diff explorer
         </h1>
@@ -266,6 +177,19 @@ export default function Home() {
             <h2>Détails</h2>
             <pre>{ selectedItem && JSON.stringify({...selectedItem.data, Avant: undefined, Après: undefined}, null, 2)}</pre>
             </div>
+
+            <div>
+            <h2>Explanations</h2>
+            { selectedItem?.explanations && (
+              selectedItem?.explanations.applied.map(e => {
+                return (<div key={e.explanationId}>
+                    <h3>{e.explanationId}</h3>
+                    <div dangerouslySetInnerHTML={{__html: jsondiffpatch.formatters.html.format(jsondiffpatch.diff(e.result.before, e.result.after))}} />
+</div>)
+              })
+              )}
+            </div>
+
 
             <div>
             <h2>Modification</h2>
